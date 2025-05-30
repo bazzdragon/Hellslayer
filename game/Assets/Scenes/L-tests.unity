@@ -510,7 +510,7 @@ Camera:
   m_Depth: -1
   m_CullingMask:
     serializedVersion: 2
-    m_Bits: 1215
+    m_Bits: 1727
   m_RenderingPath: -1
   m_TargetTexture: {fileID: 0}
   m_TargetDisplay: 0
@@ -4749,7 +4749,6 @@ MonoBehaviour:
   projectilePrefab: {fileID: 2625801280491921177, guid: 568c2e34b78ee1d438d094d9344bc0e1, type: 3}
   firePoint: {fileID: 1854820330}
   projectileSpeed: 40
-  eyeTransform: {fileID: 0}
 --- !u!195 &672953807
 NavMeshAgent:
   m_ObjectHideFlags: 0

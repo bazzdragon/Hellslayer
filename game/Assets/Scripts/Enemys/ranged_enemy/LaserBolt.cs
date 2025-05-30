@@ -6,6 +6,9 @@ public class LaserBolt : MonoBehaviour
     [SerializeField] private int damage = 10;
     [SerializeField] private float lifetime = 5f;
     private Transform player;
+    private LayerMask layermask;
+    private GameObject projOwner;
+
 
     void Start()
     {
@@ -28,9 +31,18 @@ public class LaserBolt : MonoBehaviour
             }
             Destroy(gameObject);
         }
+        else if (other.gameObject == projOwner)
+        {
+            return;
+        }
         else if (!other.isTrigger)
         {
             Destroy(gameObject);
         }
+    }
+
+    public void GiveOwner(GameObject owner)
+    {
+        projOwner = owner;
     }
 }

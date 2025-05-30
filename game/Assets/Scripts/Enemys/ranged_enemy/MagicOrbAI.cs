@@ -14,9 +14,6 @@ public class MagicOrbAI : MonoBehaviour
     [SerializeField] private Transform firePoint;
     [SerializeField] private float projectileSpeed = 40f;
 
-    [Header("Eye Targeting")]
-    [SerializeField] private Transform eyeTransform;
-
     private Transform player;
     private bool canAttack = true;
     private Vector3 targetPosition;
@@ -34,16 +31,12 @@ public class MagicOrbAI : MonoBehaviour
         // Hover movement
         transform.position = Vector3.Lerp(transform.position, targetPosition, Time.deltaTime * hoverSpeed);
 
-        // Rotate eye toward player
-        Vector3 direction = player.position - eyeTransform.position;
-        eyeTransform.rotation = Quaternion.Slerp(
-            eyeTransform.rotation,
-            Quaternion.LookRotation(direction),
-            Time.deltaTime * 5f
-        );
-
         // Attack logic
-        if (canAttack) StartCoroutine(Attack());
+        if (canAttack)
+        {
+            canAttack = false; // Prevent multiple coroutines
+            StartCoroutine(Attack());
+        }
     }
 
     private IEnumerator UpdateTargetPosition()
@@ -61,14 +54,17 @@ public class MagicOrbAI : MonoBehaviour
 
     private IEnumerator Attack()
     {
-        canAttack = false;
-
         if (projectilePrefab && firePoint)
         {
+            // Aim firePoint at the middle of the player (adjust y offset as needed)
+            Vector3 target = player.position + Vector3.up * 1f;
+            firePoint.LookAt(target);
+
             GameObject proj = Instantiate(projectilePrefab, firePoint.position, firePoint.rotation);
+            proj.GetComponent<LaserBolt>().GiveOwner(gameObject); // Set the owner of the projectile
             if (proj.TryGetComponent(out Rigidbody rb))
             {
-                rb.linearVelocity = firePoint.forward * projectileSpeed;
+                rb.linearVelocity = firePoint.forward * projectileSpeed; // Fixed property name
             }
         }
 
