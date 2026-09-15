@@ -14,11 +14,16 @@ public class PlayerMovement : MonoBehaviour // Part of the player finite StateMa
     // Movement settings
     [Header("Movement Settings")]
     [Range(0.001f, 100.0f)] public float deceleration = 0.001f; // Deceleration factor
+    [Range(0.001f, 100.0f)] public float slideDeceleration = 0.002f; // Deceleration factor
     [Range(10f, 150f)] public float walkAcceleration = 20f; // Acceleration while walking
     [Range(1f, 150f)] public float walkMaxSpeed = 5f; // Maximum walking speed
     [Range(10f, 150f)] public float sprintAcceleration = 21f; // Acceleration while sprinting
     [Range(1f, 150f)] public float sprintMaxSpeed = 7.15f; // Maximum sprinting speed
-    [SerializeField] [Range(0f, 10f)] private float groundDrag = 1.3f; // Drag applied when grounded
+    [Range(10f, 150f)] public float crouchAcceleration = 17.5f; // Acceleration while crouching
+    [Range(1f, 150f)] public float crouchMaxSpeed = 2.5f; // Maximum speed while crouching
+    [Range(1f, 150f)] public float slideSteeringStrength = 3f;
+    [Range(1f, 150f)] public float slideMaxSteer = 1f; // Maximum speed while sliding
+    [SerializeField][Range(0f, 10f)] private float groundDrag = 1.3f; // Drag applied when grounded
     public float jumpForce = 10f; // Force applied when jumping
     public float jumpCooldown = 0.58f; // Cooldown time between jumps
     [HideInInspector] public float lastJumpTime; // Timestamp of the last jump
@@ -34,22 +39,28 @@ public class PlayerMovement : MonoBehaviour // Part of the player finite StateMa
 
     // Ground detection Settings/Dependencies
     public CapsuleCollider GroundCollider; // Reference to the player's CapsuleCollider
-    private List<Collider> feetColliders = new List<Collider>(); // Colliders at feet level
+    private readonly List<Collider> feetColliders = new(); // Colliders at feet level
     public bool IsGrounded => feetColliders.Count > 0; // Check if the player is grounded
+    [HideInInspector] public float playerHitboxRadius; // Only used for mantle detection as an estimate so pretty please don't change it
+    private float feetLevel; // Feet level based on the GroundCollider's bounds
     // Input and state variables
     [HideInInspector] public bool isSprinting = false; // Is the player sprinting?
     [HideInInspector] public Rigidbody rb; // Rigidbody component
-    [HideInInspector] public Vector2 moveInput; // Movement input
     [HideInInspector] public bool isJumping; // Is the player attempting to jump?
     [HideInInspector] public bool readyToJump = true; // Is the player ready to jump?
     [HideInInspector] public float ZeroToOneMaxSpeed; // Speed variable for animator (0.0 to 1.0 based on velocity / max sprint speed)
+    [HideInInspector] public PlayerInputManager GetInput;
+    [HideInInspector] public float standingHeight; // Height of the player when standing
+    [HideInInspector] public float crouchHeight;
+    [HideInInspector] public float slideHeight;
+    [HideInInspector] public bool isSliding = false; // Is the player sliding?
 
-    private PlayerInput playerInput; // Input system reference
-    private InputAction moveAction; // Movement input action
-    private InputAction sprintAction; // Sprint input action
-    private InputAction jumpAction; // Jump input action
+    // Crouching variables
+    [HideInInspector] public bool isCrouching = false;
+    [HideInInspector] public CapsuleCollider playerHitbox; // Player's hitbox collider (used for crouching and mantle detection)
 
-    public PlayerStateMachine stateMachine; // Player state machine
+
+    public PlayerStateMachine stateMachine = new(); // Player state machine
 
 
 
@@ -58,34 +69,19 @@ public class PlayerMovement : MonoBehaviour // Part of the player finite StateMa
         // Initialize components and state machine
         rb = GetComponent<Rigidbody>();
         rb.freezeRotation = true; // Prevent tipping over
-        playerInput = new PlayerInput(); // Generated Input System class
-        stateMachine = new PlayerStateMachine();
+        GetInput = GetComponent<PlayerInputManager>(); // Find the PlayerInputManager in the scene
+        playerHitbox = GameObject.FindGameObjectWithTag("PlayerHitbox").GetComponent<CapsuleCollider>(); // get hitbox collider (change if you use different collider)
     }
 
-    private void OnEnable()
-    {
-        // Enable input actions
-        moveAction = playerInput.Player.MovementInput;
-        sprintAction = playerInput.Player.SprintInput;
-        jumpAction = playerInput.Player.JumpInput;
-
-        moveAction.Enable();
-        sprintAction.Enable();
-        jumpAction.Enable();
-    }
-
-    private void OnDisable()
-    {
-        // Disable input actions
-        moveAction.Disable();
-        sprintAction.Disable();
-        jumpAction.Disable();
-    }
 
     private void Start()
     {
         // Initialize the state machine with the idle state
         stateMachine.Initialize(new PlayerIdleState(this, stateMachine));
+        standingHeight = playerHitbox.bounds.size.y; // Get the player's standing height from the hitbox collider
+        crouchHeight = standingHeight / 2; // Set the crouch height to half of the standing height
+        slideHeight = crouchHeight;
+        playerHitboxRadius = playerHitbox.radius;
     }
 
 
@@ -95,47 +91,48 @@ public class PlayerMovement : MonoBehaviour // Part of the player finite StateMa
         GroundDrag(); // Apply drag when grounded
         InputsValuesReader(); // Read input values
 
-
-        // Handle state transitions based on input and conditions
-        if (isJumping && IsGrounded && readyToJump)
+        if (isJumping && readyToJump)
         {
             stateMachine.ChangeState(new PlayerJumpState(this, stateMachine));
         }
-        else if (isSprinting && moveInput.magnitude > 0.1f)
+
+        else if (isCrouching)
         {
-            stateMachine.ChangeState(new PlayerSprintState(this, stateMachine));
+            stateMachine.ChangeState(new PlayerCrouchState(this, stateMachine)); // Change to crouch state
         }
-        else if (moveInput.magnitude > 0.1f)
+
+        else if (GetInput.MoveValue.magnitude > 0.1f)
         {
-            stateMachine.ChangeState(new PlayerWalkState(this, stateMachine));
+            if (isSprinting) stateMachine.ChangeState(new PlayerSprintState(this, stateMachine));
+            else stateMachine.ChangeState(new PlayerWalkState(this, stateMachine));
         }
+
         else
         {
             stateMachine.ChangeState(new PlayerIdleState(this, stateMachine));
         }
 
-        
+
         ArmsAnimatorSpeedVariable(); // Update animator speed parameter (0.0 to 1.0 based on velocity)
 
         // Delegate update logic to the current state
-        stateMachine.currentState.UpdateState();
+        stateMachine.CurrentState.UpdateState();
     }
 
     private void FixedUpdate()
     {
         // Delegate physics-related logic to the current state
-        stateMachine.currentState.FixedUpdateState();
+        stateMachine.CurrentState.FixedUpdateState();
     }
 
 
 
-    private void OnCollisionEnter(Collision collision) // Ground detection Enter -using collision events
+    /*private void OnCollisionEnter(Collision collision) // Ground detection Enter -using collision events
     {
         foreach (ContactPoint contact in collision.contacts)
         {
-            // Calculate the feet level (center - extents.y)
-            float feetLevel = GroundCollider.bounds.center.y - GroundCollider.bounds.extents.y;
-
+            feetLevel = GroundCollider.bounds.center.y - GroundCollider.bounds.extents.y; // Calculate feet level based on the GroundCollider's bounds
+            
             // If the contact point is at feet level, add the collider to the list
             if (Mathf.Abs(contact.point.y - feetLevel) < 0.1f) // Tolerance to check feet level
             {
@@ -145,7 +142,7 @@ public class PlayerMovement : MonoBehaviour // Part of the player finite StateMa
                 }
             }
         }
-    }
+    }*/
 
     private void OnCollisionExit(Collision collision) // Ground detection Exit
     {
@@ -156,31 +153,45 @@ public class PlayerMovement : MonoBehaviour // Part of the player finite StateMa
         }
     }
 
+    private void OnCollisionStay(Collision collision)
+    {
+        feetLevel = transform.position.y - playerHitbox.bounds.extents.y; // Update feet level based on the GroundCollider's bounds
+        foreach (ContactPoint contact in collision.contacts)
+        {
+            if (contact.point.y < feetLevel + 0.1f && !feetColliders.Contains(collision.collider)) // Check if the contact point is at feet level
+            {
+                feetColliders.Add(collision.collider); // Add the collider to the list if not already present
+            }
+        }
+    }
+
     private void GroundDrag()
     {
         // Apply drag when grounded
-        if (IsGrounded)
+        if (!IsGrounded || stateMachine.CurrentState is PlayerSlidingState) // No drag when sliding
         {
-            rb.linearDamping = groundDrag; // Apply drag when grounded
+            rb.linearDamping = 0f; // No drag in the air or when sliding
+            return;
         }
         else
         {
-            rb.linearDamping = groundDrag; // No drag in the air
+            rb.linearDamping = groundDrag; // Apply drag when grounded
         }
     }
 
     private void InputsValuesReader()
     {
         // Read input values
-        moveInput = moveAction.ReadValue<Vector2>();
-        isSprinting = sprintAction.ReadValue<float>() > 0.1f;
-        isJumping = jumpAction.ReadValue<float>() > 0;
+        isSprinting = GetInput.SprintInput.IsPressed();
+        isJumping = GetInput.JumpInput.WasPressedThisFrame();
+        isCrouching = GetInput.CrouchInput.IsPressed();
+        isSliding = GetInput.SlideInput.IsPressed();
     }
 
     private void ArmsAnimatorSpeedVariable()
     {
         // Update animator speed parameter (0.0 to 1.0 based on velocity)
-        Vector3 horizontalVelocity = new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z);
+        Vector3 horizontalVelocity = new(rb.linearVelocity.x, 0f, rb.linearVelocity.z);
         float horizontalSpeed = horizontalVelocity.magnitude;
 
         // Apply threshold to prevent tiny floating point noise
@@ -192,6 +203,7 @@ public class PlayerMovement : MonoBehaviour // Part of the player finite StateMa
         ArmsAnimator.SetFloat("Speed", ZeroToOneMaxSpeed);
         //Debug.Log(ArmsAnimator.GetFloat("Speed"));
     }
+
 
     // *Not nesesary functions/code
 
@@ -206,4 +218,5 @@ public class PlayerMovement : MonoBehaviour // Part of the player finite StateMa
                             new Vector3(GroundCollider.bounds.max.x, feetLevel, GroundCollider.bounds.max.z));
         }
     }
+    
 }

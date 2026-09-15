@@ -16,6 +16,10 @@ TagManager:
   - rocket
   - Enemy
   - Boss
+  - bird
+  - Pausemenu
+  - AttackPoint
+  - ItemSlotHandler
   layers:
   - Default
   - TransparentFX

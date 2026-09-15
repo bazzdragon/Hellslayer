@@ -3,30 +3,19 @@ using UnityEngine.EventSystems;
 
 public class PlayerWalkState : PlayerState // This is part of the player finite StateMachine
 {
-    public PlayerWalkState(PlayerMovement player, PlayerStateMachine stateMachine) 
+    public PlayerWalkState(PlayerMovement player, PlayerStateMachine stateMachine)
         : base(player, stateMachine) { }
-    
+
     public override void EnterState()
     {
         //Debug.Log("Entering Walk State");
         // Any logic you want to trigger when entering the run state, like setting animations, etc.
     }
-    public override void UpdateState()
-    {
-        if (player.isSprinting && player.moveInput.magnitude > 0.1f)
-        {
-            stateMachine.ChangeState(new PlayerSprintState(player, stateMachine));
-        }
-        else if (player.moveInput.magnitude <= 0.1f)
-        {
-            stateMachine.ChangeState(new PlayerIdleState(player, stateMachine));
-        }
-    }
 
     public override void FixedUpdateState()
     {
         // Calculate movement direction
-        Vector3 moveDirection = player.orientation.forward * player.moveInput.y + player.orientation.right * player.moveInput.x;
+        Vector3 moveDirection = player.orientation.forward * player.GetInput.MoveValue.y + player.orientation.right * player.GetInput.MoveValue.x;
         moveDirection.Normalize();
 
         // Get current horizontal velocity
@@ -43,5 +32,10 @@ public class PlayerWalkState : PlayerState // This is part of the player finite 
             Vector3 clampedVelocity = horizontalVelocity.normalized * player.walkMaxSpeed;
             player.rb.linearVelocity = new Vector3(clampedVelocity.x, player.rb.linearVelocity.y, clampedVelocity.z);
         }
+    }
+    
+    public override bool CanExitState()
+    {
+        return base.CanExitState();
     }
 }
